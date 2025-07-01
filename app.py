@@ -1,91 +1,98 @@
 import streamlit as st
 import ast
-from analyzer import CodeAnalyzer
 import pandas as pd
 import altair as alt
+from analyzer import CodeAnalyzer
 
+# ── Page config & header ─────────────────────────────────────────────────────
 st.set_page_config(page_title="Code Complexity Analyzer", layout="centered")
-st.write("Upload Python files to analyze their structure and estimate code complexity. Get tips to improve your code!")
 st.title("🧠 Code Complexity Analyzer")
-st.markdown("Upload your Python `.py` files to analyze their complexity.")
+st.write(
+    "Upload Python files to analyze their structure and estimate code complexity. "
+    "Get tips to improve your code!"
+)
+st.markdown("---")
 
-# Upload Python files
-uploaded_files = st.file_uploader("📁 Upload one or more Python files", type="py", accept_multiple_files=True)
+# ── File uploader ─────────────────────────────────────────────────────────────
+st.markdown("### 📁 Upload Your Python Files")
+uploaded_files = st.file_uploader(
+    "Choose one or more `.py` files", type="py", accept_multiple_files=True
+)
 
-if uploaded_files:
-    st.success(f"{len(uploaded_files)} file(s) uploaded successfully.")
+if not uploaded_files:
+    st.info("⏳ Upload at least one Python file to begin analysis.")
+    st.stop()
 
-    report_data = []
+# ── Analyze each file ──────────────────────────────────────────────────────────
+report_data = []
 
-    for file in uploaded_files:
-        source_code = file.read().decode("utf-8")  # Read and decode the file
-        try:
-            tree = ast.parse(source_code)  # Convert to AST (code tree)
-        except SyntaxError:
-            st.error(f"❌ Syntax error in file: {file.name}")
-            continue
+for file in uploaded_files:
+    source = file.read().decode("utf-8")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        st.error(f"❌ Syntax error in {file.name}, skipping")
+        continue
 
-        analyzer = CodeAnalyzer()         # Create analyzer object
-        analyzer.visit(tree)              # Analyze the AST
+    analyzer = CodeAnalyzer()
+    analyzer.visit(tree)
 
-        is_recursive = bool(analyzer.recursive_functions)
-
-        score = (
-            analyzer.functions * 2 +
-            analyzer.loops * 3 +
-            analyzer.ifs * 2 +
-            analyzer.max_depth * 1 +
-            (5 if is_recursive else 0)
-        )
-
-        level = (
-            "Easy" if score <= 10 else
-            "Medium" if score <= 20 else
-            "Hard"
-        )
-
-        report_data.append({
-            "Filename": file.name,
-            "Functions": analyzer.functions,
-            "Loops": analyzer.loops,
-            "Ifs": analyzer.ifs,
-            "Recursion": "Yes" if is_recursive else "No",
-            "Nesting Depth": analyzer.max_depth,
-            "Score": score,
-            "Difficulty": level
-        })
-
-    # Show table
-    df = pd.DataFrame(report_data)
-    st.subheader("📊 Code Complexity Report")
-    st.dataframe(df)
-    df = df.sort_values("Score", ascending=False)
-
-    st.markdown("### 🧾 Code Complexity Report")
-    st.dataframe(df)
-
-# Bar Chart
-    st.markdown("### 📊 Visual Complexity Chart")
-    st.subheader("📈 Score Comparison Chart")
-    st.markdown("### 📥 Download Report")
-    chart = alt.Chart(df).mark_bar().encode(
-        x=alt.X('Filename', sort='-y'),
-        y='Score',
-        color=alt.Color('Difficulty', scale=alt.Scale(scheme='set2')),
-        tooltip=['Filename', 'Score', 'Difficulty']
-    ).properties(
-        width=700,
-        height=400
+    is_rec = bool(analyzer.recursive_functions)
+    score = (
+        analyzer.functions * 2
+        + analyzer.loops * 3
+        + analyzer.ifs * 2
+        + analyzer.max_depth
+        + (5 if is_rec else 0)
+    )
+    level = "Easy" if score <= 10 else "Medium" if score <= 20 else "Hard"
+    tip = (
+        "✅ Clean code! Keep it up."
+        if score <= 10
+        else "🧪 Moderate complexity; consider simplifying loops or conditions."
+        if score <= 20
+        else "⚠️ High complexity; consider refactoring or reducing recursion."
     )
 
-    st.altair_chart(chart, use_container_width=True)
-    csv = df.to_csv(index=False).encode('utf-8')
+    report_data.append({
+        "Filename": file.name,
+        "Functions": analyzer.functions,
+        "Loops": analyzer.loops,
+        "Ifs": analyzer.ifs,
+        "Recursion": "Yes" if is_rec else "No",
+        "Nesting Depth": analyzer.max_depth,
+        "Score": score,
+        "Difficulty": level,
+        "Tip": tip
+    })
 
-    st.download_button(
-        label="📥 Download CSV Report",
-        data=csv,
-        file_name='code_complexity_report.csv',
-        mime='text/csv')
-    
-else:
-    st.info("⏳ Upload at least one Python file to begin analysis.")
+# ── Build DataFrame & display ─────────────────────────────────────────────────
+df = pd.DataFrame(report_data).sort_values("Score", ascending=False)
+
+st.markdown("### 🧾 Code Complexity Report")
+st.dataframe(df, use_container_width=True)
+
+# ── CSV Download ───────────────────────────────────────────────────────────────
+csv = df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="📥 Download CSV Report",
+    data=csv,
+    file_name="code_complexity_report.csv",
+    mime="text/csv",
+)
+st.markdown("---")
+
+# ── Bar Chart ─────────────────────────────────────────────────────────────────
+st.markdown("### 📊 Score Comparison Chart")
+chart = (
+    alt.Chart(df)
+    .mark_bar()
+    .encode(
+        x=alt.X("Filename", sort="-y"),
+        y="Score",
+        color=alt.Color("Difficulty", scale=alt.Scale(scheme="set2")),
+        tooltip=["Filename", "Score", "Difficulty", "Tip"],
+    )
+    .properties(width=700, height=400)
+)
+st.altair_chart(chart, use_container_width=True)
